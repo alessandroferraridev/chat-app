@@ -3,7 +3,7 @@
 FROM composer:2 AS composer_deps
 WORKDIR /app
 COPY composer.json composer.lock ./
-RUN composer install --no-dev --prefer-dist --no-interaction --no-progress --optimize-autoloader
+RUN composer install --no-dev --prefer-dist --no-interaction --no-progress --optimize-autoloader --no-scripts
 
 FROM node:22-alpine AS frontend_build
 WORKDIR /app
@@ -24,7 +24,7 @@ COPY public ./public
 COPY vite.config.js tsconfig.json ./
 RUN npm run build
 
-FROM php:8.3-apache AS runtime
+FROM php:8.4-apache AS runtime
 WORKDIR /var/www/html
 
 RUN apt-get update \
@@ -45,7 +45,10 @@ COPY . .
 COPY --from=composer_deps /app/vendor ./vendor
 COPY --from=frontend_build /app/public/build ./public/build
 
-RUN chown -R www-data:www-data storage bootstrap/cache \
+RUN mkdir -p storage/framework/cache storage/framework/sessions storage/framework/views \
+    && rm -f bootstrap/cache/*.php \
+    && php artisan package:discover --ansi \
+    && chown -R www-data:www-data storage bootstrap/cache \
     && chmod -R ug+rwx storage bootstrap/cache
 
 EXPOSE 80 9000
