@@ -1,15 +1,14 @@
 {
     "$schema": "https://getcomposer.org/schema.json",
-    "name": "laravel/laravel",
+    "name": "alessandroferraridev/chat-app",
     "type": "project",
-    "description": "The skeleton application for the Laravel framework.",
+    "description": "chat application with laravel + react with inertia.js + reverb / pusherjs + postgresql ",
     "keywords": ["laravel", "framework"],
     "license": "MIT",
     "require": {
         "php": "^8.2",
         "inertiajs/inertia-laravel": "^2.0",
         "laravel/framework": "^12.0",
-        "laravel/sanctum": "^4.2",
         "laravel/tinker": "^2.10.1"
     },
     "require-dev": {

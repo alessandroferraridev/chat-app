@@ -1,12 +1,12 @@
-import React from "react";
 import { Head } from "@inertiajs/react";
-import { useMutation } from "@tanstack/react-query";
-import axios, { AxiosError } from "axios";
 import { useForm } from "@tanstack/react-form";
-import Wrapper from "../components/wrapper";
-import Input from "../components/input";
-import Button from "../components/button";
+import { useMutation } from "@tanstack/react-query";
+import axios from "axios";
+import React from "react";
 import z from "zod";
+import Button from "../components/button";
+import Input from "../components/input";
+import Wrapper from "../components/wrapper";
 
 interface LoginProps {}
 

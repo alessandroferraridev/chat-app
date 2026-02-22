@@ -6,6 +6,7 @@ use App\Mail\MagicLinkMail;
 use App\Models\MagicLink;
 use App\Models\User;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Str;
@@ -58,7 +59,7 @@ class AuthController extends Controller
     );
   }
 
-  public function verifyMagicLink(string $token)
+  public function verifyMagicLink(Request $request, string $token)
   {
     $magicLink = MagicLink::where('token', $token)
       ->where('expires_at', '>', now())
@@ -74,11 +75,11 @@ class AuthController extends Controller
 
     $magicLink->delete();
 
-    $authToken = $user->createToken('auth-token', ['chat'])->plainTextToken;
+    Auth::login($user);
+    $request->session()->regenerate();
 
     return response()->json(
       [
-        'token' => $authToken,
         'user' => [
           'id' => $user->id,
           'name' => $user->name,
@@ -88,5 +89,15 @@ class AuthController extends Controller
       ],
       200,
     );
+  }
+
+  public function logout(Request $request)
+  {
+    Auth::logout();
+
+    $request->session()->invalidate();
+    $request->session()->regenerateToken();
+
+    return response()->json(['message' => 'Logout riuscito.'], 200);
   }
 }
