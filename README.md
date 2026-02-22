@@ -2,7 +2,7 @@
 
 Side project sperimentale per testare una chat realtime con stack Laravel + React.
 
-> Nota: questo repository **non e un progetto serio/production-ready**. E usato come playground tecnico.
+> Nota: questo repository **non è un progetto serio/production-ready** ma è usato come playground tecnico.
 
 ## Stack Tecnico
 
