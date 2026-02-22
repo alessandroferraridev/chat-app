@@ -1,6 +1,6 @@
 import { type FormEvent, type UIEvent, useEffect, useMemo, useState } from "react";
 import { useInfiniteQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { usePage } from "@inertiajs/react";
+import { router, usePage } from "@inertiajs/react";
 import axios from "axios";
 import { CHAT_CONVERSATIONS_QUERY_KEY } from "../../utils/query-keys";
 import type { ChatConversation } from "../../utils/types";
@@ -42,13 +42,15 @@ const toConversation = (conversation: ApiConversation): ChatConversation => {
 
 const ConversationsSidebar = ({ selectedConversationId, onSelectConversation }: ConversationsSidebarProps) => {
   const queryClient = useQueryClient();
-  const { props } = usePage<{ auth?: { user?: { id: number } } }>();
+  const { props } = usePage<{ auth?: { user?: { id: number; email: string } } }>();
   const authUserId = props.auth?.user?.id ?? null;
+  const authUserEmail = props.auth?.user?.email ?? "";
 
   const [searchTerm, setSearchTerm] = useState("");
   const [isCreatingConversation, setIsCreatingConversation] = useState(false);
   const [newConversationEmail, setNewConversationEmail] = useState("");
   const [emailError, setEmailError] = useState("");
+  const [unreadConversationIds, setUnreadConversationIds] = useState<Set<number>>(new Set());
 
   const conversationsQuery = useInfiniteQuery({
     queryKey: CHAT_CONVERSATIONS_QUERY_KEY,
@@ -121,14 +123,45 @@ const ConversationsSidebar = ({ selectedConversationId, onSelectConversation }: 
     };
 
     channel.listen(".chat.conversation.created", refreshConversations);
-    channel.listen(".chat.message.sent", refreshConversations);
+    channel.listen(
+      ".chat.message.sent",
+      (payload: { conversation_id: number; message: { sender_user_id: number } }) => {
+        refreshConversations();
+
+        if (payload.message.sender_user_id === authUserId || payload.conversation_id === selectedConversationId) {
+          return;
+        }
+
+        setUnreadConversationIds((current) => {
+          const next = new Set(current);
+          next.add(payload.conversation_id);
+          return next;
+        });
+      },
+    );
 
     return () => {
       channel.stopListening(".chat.conversation.created");
       channel.stopListening(".chat.message.sent");
       window.Echo.leave(channelName);
     };
-  }, [authUserId, queryClient]);
+  }, [authUserId, queryClient, selectedConversationId]);
+
+  useEffect(() => {
+    if (!selectedConversationId) {
+      return;
+    }
+
+    setUnreadConversationIds((current) => {
+      if (!current.has(selectedConversationId)) {
+        return current;
+      }
+
+      const next = new Set(current);
+      next.delete(selectedConversationId);
+      return next;
+    });
+  }, [selectedConversationId]);
 
   const filteredConversations = useMemo(() => {
     const normalizedSearch = searchTerm.trim().toLowerCase();
@@ -175,6 +208,20 @@ const ConversationsSidebar = ({ selectedConversationId, onSelectConversation }: 
 
   return (
     <aside className="flex h-full flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+      <div className="border-b border-slate-100 px-4 py-3">
+        <p className="text-[11px] font-medium uppercase tracking-wide text-slate-500">Account</p>
+        <div className="mt-2 flex items-center justify-between gap-2">
+          <p className="truncate text-sm font-medium text-slate-900">{authUserEmail}</p>
+          <button
+            type="button"
+            onClick={() => router.post("/logout")}
+            className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-medium text-slate-700 transition hover:bg-slate-50"
+          >
+            Logout
+          </button>
+        </div>
+      </div>
+
       <header className="border-b border-slate-100 px-4 py-3">
         <h1 className="text-base font-semibold tracking-tight text-slate-900">Conversazioni</h1>
 
@@ -237,12 +284,24 @@ const ConversationsSidebar = ({ selectedConversationId, onSelectConversation }: 
         <ul className="space-y-1">
           {filteredConversations.map((conversation) => {
             const isActive = conversation.id === selectedConversationId;
+            const hasUnread = unreadConversationIds.has(conversation.id) && !isActive;
 
             return (
               <li key={conversation.id}>
                 <button
                   type="button"
-                  onClick={() => onSelectConversation(conversation)}
+                  onClick={() => {
+                    setUnreadConversationIds((current) => {
+                      if (!current.has(conversation.id)) {
+                        return current;
+                      }
+
+                      const next = new Set(current);
+                      next.delete(conversation.id);
+                      return next;
+                    });
+                    onSelectConversation(conversation);
+                  }}
                   className={`w-full rounded-xl border px-3 py-2 text-left transition ${
                     isActive
                       ? "border-slate-300 bg-slate-100"
@@ -251,7 +310,10 @@ const ConversationsSidebar = ({ selectedConversationId, onSelectConversation }: 
                 >
                   <div className="flex items-center justify-between gap-2">
                     <p className="truncate text-sm font-medium text-slate-900">{conversation.title}</p>
-                    <span className="text-xs text-slate-500">{conversation.updatedAt}</span>
+                    <div className="flex items-center gap-2">
+                      {hasUnread && <span className="h-2.5 w-2.5 rounded-full bg-rose-500" aria-label="Nuovi messaggi" />}
+                      <span className="text-xs text-slate-500">{conversation.updatedAt}</span>
+                    </div>
                   </div>
                   <p className="mt-1 truncate text-xs text-slate-600">{conversation.email}</p>
                   <p className="mt-1 truncate text-xs text-slate-500">{conversation.preview}</p>

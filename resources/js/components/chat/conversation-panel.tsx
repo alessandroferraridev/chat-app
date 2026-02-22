@@ -18,6 +18,17 @@ type ConversationPanelProps = {
   onBack: () => void;
 };
 
+type PendingMessage = {
+  id: string;
+  text: string;
+  time: string;
+};
+
+type RenderMessage = ChatMessage & {
+  isPending?: boolean;
+  pendingId?: string;
+};
+
 const MESSAGES_LIMIT = 50;
 
 const ConversationPanel = ({ conversation, isMobile, onBack }: ConversationPanelProps) => {
@@ -26,6 +37,8 @@ const ConversationPanel = ({ conversation, isMobile, onBack }: ConversationPanel
   const authUserId = props.auth?.user?.id ?? null;
 
   const [messageInput, setMessageInput] = useState("");
+  const [sendError, setSendError] = useState("");
+  const [pendingMessages, setPendingMessages] = useState<PendingMessage[]>([]);
 
   const scrollContainerRef = useRef<HTMLDivElement | null>(null);
   const previousScrollMetricsRef = useRef<{ top: number; height: number } | null>(null);
@@ -55,15 +68,59 @@ const ConversationPanel = ({ conversation, isMobile, onBack }: ConversationPanel
   });
 
   const sendMessageMutation = useMutation({
-    mutationFn: async (text: string) => {
+    mutationFn: async ({ text }: { tempId: string; text: string }) => {
       if (!conversation?.id) {
+        throw new Error("Nessuna conversazione selezionata.");
+      }
+
+      const response = await axios.post<{ data: ChatMessage }>(`/api/chat/conversations/${conversation.id}/messages`, {
+        text,
+      });
+
+      return response.data.data;
+    },
+    onSuccess: (savedMessage, variables) => {
+      setPendingMessages((current) => current.filter((message) => message.id !== variables.tempId));
+
+      if (!conversation?.id || !savedMessage) {
         return;
       }
 
-      await axios.post(`/api/chat/conversations/${conversation.id}/messages`, { text });
+      queryClient.setQueryData<InfiniteData<MessagesResponse>>(chatMessagesQueryKey(conversation.id), (currentData) => {
+        if (!currentData || currentData.pages.length === 0) {
+          return currentData;
+        }
+
+        const [firstPage, ...restPages] = currentData.pages;
+        if (!firstPage) {
+          return currentData;
+        }
+
+        const alreadyExists = currentData.pages.some((page) => page.data.some((message) => message.id === savedMessage.id));
+
+        if (alreadyExists) {
+          return currentData;
+        }
+
+        return {
+          ...currentData,
+          pages: [
+            {
+              has_more: firstPage.has_more,
+              next_before_id: firstPage.next_before_id,
+              limit: firstPage.limit,
+              data: [...firstPage.data, savedMessage],
+            },
+            ...restPages,
+          ],
+        };
+      });
+
+      queryClient.invalidateQueries({ queryKey: CHAT_CONVERSATIONS_QUERY_KEY });
     },
-    onSuccess: async () => {
-      setMessageInput("");
+    onError: (_error, variables) => {
+      setPendingMessages((current) => current.filter((message) => message.id !== variables.tempId));
+      setSendError("Invio non riuscito. Riprova.");
     },
   });
 
@@ -83,8 +140,23 @@ const ConversationPanel = ({ conversation, isMobile, onBack }: ConversationPanel
     return [...deduped.values()].sort((a, b) => a.id - b.id);
   }, [messagesQuery.data]);
 
+  const renderedMessages = useMemo<RenderMessage[]>(() => {
+    const normalizedPending: RenderMessage[] = pendingMessages.map((pendingMessage, index) => ({
+      id: -(index + 1),
+      author: "me",
+      text: pendingMessage.text,
+      time: pendingMessage.time,
+      isPending: true,
+      pendingId: pendingMessage.id,
+    }));
+
+    return [...messages, ...normalizedPending];
+  }, [messages, pendingMessages]);
+
   useEffect(() => {
     setMessageInput("");
+    setSendError("");
+    setPendingMessages([]);
   }, [conversation?.id]);
 
   useEffect(() => {
@@ -119,7 +191,11 @@ const ConversationPanel = ({ conversation, isMobile, onBack }: ConversationPanel
               return currentData;
             }
 
-            const firstPage = currentData.pages[0];
+            const [firstPage, ...restPages] = currentData.pages;
+            if (!firstPage) {
+              return currentData;
+            }
+
             const alreadyExists = currentData.pages.some((page) =>
               page.data.some((message) => message.id === normalizedMessage.id),
             );
@@ -132,10 +208,12 @@ const ConversationPanel = ({ conversation, isMobile, onBack }: ConversationPanel
               ...currentData,
               pages: [
                 {
-                  ...firstPage,
+                  has_more: firstPage.has_more,
+                  next_before_id: firstPage.next_before_id,
+                  limit: firstPage.limit,
                   data: [...firstPage.data, normalizedMessage],
                 },
-                ...currentData.pages.slice(1),
+                ...restPages,
               ],
             };
           },
@@ -187,16 +265,24 @@ const ConversationPanel = ({ conversation, isMobile, onBack }: ConversationPanel
     if (shouldStickToBottomRef.current) {
       container.scrollTop = container.scrollHeight;
     }
-  }, [messages.length, conversation?.id]);
+  }, [messages.length, pendingMessages.length, conversation?.id]);
 
   const handleSendMessage = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
 
-    if (!messageInput.trim() || !conversation) {
+    const normalizedText = messageInput.trim();
+
+    if (!normalizedText || !conversation) {
       return;
     }
 
-    sendMessageMutation.mutate(messageInput.trim());
+    const tempId = `${Date.now()}-${Math.floor(Math.random() * 10000)}`;
+    const now = new Date().toLocaleTimeString("it-IT", { hour: "2-digit", minute: "2-digit" });
+
+    setSendError("");
+    setPendingMessages((current) => [...current, { id: tempId, text: normalizedText, time: now }]);
+    setMessageInput("");
+    sendMessageMutation.mutate({ tempId, text: normalizedText });
   };
 
   if (!conversation) {
@@ -238,18 +324,18 @@ const ConversationPanel = ({ conversation, isMobile, onBack }: ConversationPanel
           </p>
         )}
 
-        {messages.length === 0 && (
+        {renderedMessages.length === 0 && (
           <p className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-600">
             Nessun messaggio ancora. Scrivi il primo messaggio a {conversation.email}.
           </p>
         )}
 
-        {messages.map((message) => (
+        {renderedMessages.map((message) => (
           <div
-            key={`${conversation.id}-${message.id}`}
+            key={message.isPending ? `${conversation.id}-${message.pendingId}` : `${conversation.id}-${message.id}`}
             className={`w-fit max-w-[78%] rounded-2xl px-3.5 py-2.5 text-sm leading-relaxed sm:max-w-[68%] ${
               message.author === "me" ? "ml-auto bg-slate-900 text-white" : "bg-slate-100 text-slate-800"
-            }`}
+            } ${message.isPending ? "opacity-55" : ""}`}
           >
             <p>{message.text}</p>
             <p className={`mt-1 text-[11px] ${message.author === "me" ? "text-slate-300" : "text-slate-500"}`}>
@@ -260,6 +346,7 @@ const ConversationPanel = ({ conversation, isMobile, onBack }: ConversationPanel
       </div>
 
       <footer className="border-t border-slate-100 px-4 py-3 sm:px-5">
+        {sendError && <p className="mb-2 text-xs text-rose-600">{sendError}</p>}
         <form onSubmit={handleSendMessage} className="flex items-end gap-2">
           <input
             type="text"
@@ -270,7 +357,7 @@ const ConversationPanel = ({ conversation, isMobile, onBack }: ConversationPanel
           />
           <button
             type="submit"
-            disabled={!messageInput.trim() || sendMessageMutation.isPending}
+            disabled={!messageInput.trim()}
             className="rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-medium text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-400"
           >
             Invia

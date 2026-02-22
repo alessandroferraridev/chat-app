@@ -1,59 +1,135 @@
-<p align="center"><a href="https://laravel.com" target="_blank"><img src="https://raw.githubusercontent.com/laravel/art/master/logo-lockup/5%20SVG/2%20CMYK/1%20Full%20Color/laravel-logolockup-cmyk-red.svg" width="400" alt="Laravel Logo"></a></p>
+# Chat App
 
-<p align="center">
-<a href="https://github.com/laravel/framework/actions"><img src="https://github.com/laravel/framework/workflows/tests/badge.svg" alt="Build Status"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/dt/laravel/framework" alt="Total Downloads"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/v/laravel/framework" alt="Latest Stable Version"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/l/laravel/framework" alt="License"></a>
-</p>
+Side project sperimentale per testare una chat realtime con stack Laravel + React.
 
-## About Laravel
+> Nota: questo repository **non e un progetto serio/production-ready**. E usato come playground tecnico.
 
-Laravel is a web application framework with expressive, elegant syntax. We believe development must be an enjoyable and creative experience to be truly fulfilling. Laravel takes the pain out of development by easing common tasks used in many web projects, such as:
+## Stack Tecnico
 
-- [Simple, fast routing engine](https://laravel.com/docs/routing).
-- [Powerful dependency injection container](https://laravel.com/docs/container).
-- Multiple back-ends for [session](https://laravel.com/docs/session) and [cache](https://laravel.com/docs/cache) storage.
-- Expressive, intuitive [database ORM](https://laravel.com/docs/eloquent).
-- Database agnostic [schema migrations](https://laravel.com/docs/migrations).
-- [Robust background job processing](https://laravel.com/docs/queues).
-- [Real-time event broadcasting](https://laravel.com/docs/broadcasting).
+- Backend: `Laravel 12` (PHP `^8.2`)
+- Frontend: `React 19` + `TypeScript` + `Inertia.js`
+- Build tool: `Vite 7`
+- Styling: `Tailwind CSS 4`
+- State/data fetching frontend: `@tanstack/react-query`, `@tanstack/react-form`, `zustand`
+- Realtime: `Laravel Reverb` + `laravel-echo` + `pusher-js`
+- Database:
+  - sviluppo locale: `SQLite` (default in `.env.example`)
+  - container/prod-like: `PostgreSQL 16` (via `docker-compose`)
 
-Laravel is accessible, powerful, and provides tools required for large, robust applications.
+## Funzionalita Implementate
 
-## Learning Laravel
+- Login passwordless con magic link via email
+- Creazione conversazioni 1:1 da email destinatario
+- Lista conversazioni con preview ultimo messaggio
+- Invio/ricezione messaggi realtime
+- Badge messaggi non letti in sidebar
+- Paginazione incrementale (infinite scroll) per:
+  - conversazioni
+  - storico messaggi
 
-Laravel has the most extensive and thorough [documentation](https://laravel.com/docs) and video tutorial library of all modern web application frameworks, making it a breeze to get started with the framework. You can also check out [Laravel Learn](https://laravel.com/learn), where you will be guided through building a modern Laravel application.
+## Architettura Applicativa
 
-If you don't feel like reading, [Laracasts](https://laracasts.com) can help. Laracasts contains thousands of video tutorials on a range of topics including Laravel, modern PHP, unit testing, and JavaScript. Boost your skills by digging into our comprehensive video library.
+- Routing web + pagine Inertia in `routes/web.php`
+- Endpoint API in `routes/api.php`
+- Controller principali:
+  - `app/Http/Controllers/AuthController.php`
+  - `app/Http/Controllers/ChatController.php`
+- Eventi broadcast realtime:
+  - `app/Events/ConversationCreated.php`
+  - `app/Events/MessageSent.php`
+- Modelli principali:
+  - `app/Models/Conversation.php`
+  - `app/Models/Message.php`
+  - `app/Models/MagicLink.php`
 
-## Laravel Sponsors
+## Flusso Realtime
 
-We would like to extend our thanks to the following sponsors for funding Laravel development. If you are interested in becoming a sponsor, please visit the [Laravel Partners program](https://partners.laravel.com).
+- Backend pubblica eventi su canali:
+  - `user.{id}` per aggiornamenti conversazioni/notifiche
+  - `conversation.{id}` per nuovi messaggi della conversazione
+- Frontend inizializza Echo in `resources/js/bootstrap.ts`
+- UI ascolta eventi e sincronizza cache React Query senza reload pagina
 
-### Premium Partners
+## Schema Dati (high-level)
 
-- **[Vehikl](https://vehikl.com)**
-- **[Tighten Co.](https://tighten.co)**
-- **[Kirschbaum Development Group](https://kirschbaumdevelopment.com)**
-- **[64 Robots](https://64robots.com)**
-- **[Curotec](https://www.curotec.com/services/technologies/laravel)**
-- **[DevSquad](https://devsquad.com/hire-laravel-developers)**
-- **[Redberry](https://redberry.international/laravel-development)**
-- **[Active Logic](https://activelogic.com)**
+- `users`
+- `magic_links`
+- `chat_conversations`
+- `chat_conversation_user` (pivot molti-a-molti partecipanti)
+- `chat_messages`
 
-## Contributing
+## Setup Locale (senza Docker)
 
-Thank you for considering contributing to the Laravel framework! The contribution guide can be found in the [Laravel documentation](https://laravel.com/docs/contributions).
+Prerequisiti minimi:
 
-## Code of Conduct
+- PHP `8.2+`
+- Composer
+- Node.js `18+` (o compatibile con Vite 7)
 
-In order to ensure that the Laravel community is welcoming to all, please review and abide by the [Code of Conduct](https://laravel.com/docs/contributions#code-of-conduct).
+Installazione rapida:
 
-## Security Vulnerabilities
+```bash
+composer install
+cp .env.example .env
+php artisan key:generate
+php artisan migrate
+npm install
+npm run dev
+```
 
-If you discover a security vulnerability within Laravel, please send an e-mail to Taylor Otwell via [taylor@laravel.com](mailto:taylor@laravel.com). All security vulnerabilities will be promptly addressed.
+In un secondo terminale (realtime):
 
-## License
+```bash
+php artisan reverb:start --host=0.0.0.0 --port=9000
+```
 
-The Laravel framework is open-sourced software licensed under the [MIT license](https://opensource.org/licenses/MIT).
+App web: `http://localhost:8000` (se avviata con `php artisan serve`).
+
+## Setup con Docker
+
+Servizi definiti in `docker-compose.yml`:
+
+- `app` (Laravel + frontend buildato)
+- `queue` (worker)
+- `reverb` (websocket server)
+- `db` (PostgreSQL)
+- `migrate` (profilo tools)
+
+Comandi base:
+
+```bash
+docker compose up -d --build
+docker compose --profile tools run --rm migrate
+```
+
+## API Principali
+
+Auth:
+
+- `POST /api/auth/magic-link`
+- `POST /auth/verify/{token}`
+- `POST /logout`
+
+Chat:
+
+- `GET /api/chat/conversations`
+- `POST /api/chat/conversations`
+- `GET /api/chat/conversations/{conversation}/messages`
+- `POST /api/chat/conversations/{conversation}/messages`
+
+## Stato del Progetto
+
+- Progetto personale, in evoluzione continua.
+- Possibili breaking changes senza preavviso.
+- Non ottimizzato per sicurezza/scala da produzione.
+
+## Licenza
+
+Questo progetto e distribuito sotto licenza **MIT**.
+
+Se vuoi riutilizzarlo, aggiungi/usa un file `LICENSE` con testo MIT standard.
+
+## TODO
+
+- Chat di gruppo
+- Invio media
