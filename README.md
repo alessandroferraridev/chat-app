@@ -130,6 +130,7 @@ Questo progetto e distribuito sotto licenza **MIT**.
 Se vuoi riutilizzarlo, aggiungi/usa un file `LICENSE` con testo MIT standard.
 
 ## TODO
-
+- Migliorare caricamenti
+- Anziché creare subito la conversazione con qualcuno, crearla nel momento in cui viene inviato il primo messaggio
 - Chat di gruppo
 - Invio media
