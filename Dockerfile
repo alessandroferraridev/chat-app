@@ -33,6 +33,7 @@ RUN apt-get update \
         libzip-dev \
         unzip \
         git \
+        supervisor \
     && docker-php-ext-install pdo_pgsql bcmath pcntl zip opcache \
     && a2enmod rewrite headers \
     && rm -rf /var/lib/apt/lists/*
@@ -44,11 +45,16 @@ RUN sed -ri -e 's!/var/www/html!${APACHE_DOCUMENT_ROOT}!g' /etc/apache2/sites-av
 COPY . .
 COPY --from=composer_deps /app/vendor ./vendor
 COPY --from=frontend_build /app/public/build ./public/build
+COPY docker/supervisord.conf /etc/supervisor/conf.d/supervisord.conf
+COPY docker/start.sh /usr/local/bin/start-container
 
 RUN mkdir -p storage/framework/cache storage/framework/sessions storage/framework/views \
     && rm -f bootstrap/cache/*.php \
     && php artisan package:discover --ansi \
+    && chmod +x /usr/local/bin/start-container \
     && chown -R www-data:www-data storage bootstrap/cache \
     && chmod -R ug+rwx storage bootstrap/cache
 
 EXPOSE 80 9000
+
+CMD ["/usr/local/bin/start-container"]
